@@ -325,7 +325,7 @@ fn scan_directory_recursive(dir: &Path, html_files: &mut Vec<HtmlFile>) -> std::
     Ok(())
 }
 
-fn generate_sitemap_html(files: &[HtmlFile], db: &Database) -> String {
+fn generate_sitemap_html(files: &[HtmlFile], db: &Database, base_dir: &Path) -> String {
     let mut html = String::new();
     
     html.push_str("<!DOCTYPE html>\n");
@@ -361,13 +361,20 @@ fn generate_sitemap_html(files: &[HtmlFile], db: &Database) -> String {
         html.push_str("        <ul class=\"file-list\">\n");
         
         for file in files {
+            // Generate relative path for href
+            let relative_path = if let Ok(rel_path) = file.path.strip_prefix(base_dir) {
+                rel_path.to_string_lossy().to_string()
+            } else {
+                file.path.to_string_lossy().to_string()
+            };
+            
             html.push_str("            <li class=\"file-item\">\n");
             html.push_str(&format!("                <div class=\"file-title\"><a href=\"{}\">{}</a></div>\n", 
-                html_escape::encode_text(&file.path.to_string_lossy()),
+                html_escape::encode_text(&relative_path),
                 html_escape::encode_text(&file.title)
             ));
             html.push_str(&format!("                <div class=\"file-path\">{}</div>\n", 
-                html_escape::encode_text(&file.path.to_string_lossy())
+                html_escape::encode_text(&relative_path)
             ));
             
             if let Ok(time) = file.modified.duration_since(SystemTime::UNIX_EPOCH) {
@@ -418,8 +425,13 @@ fn generate_sitemap_html(files: &[HtmlFile], db: &Database) -> String {
         if let Ok(time) = newest.modified.duration_since(SystemTime::UNIX_EPOCH) {
             let datetime = chrono::DateTime::from_timestamp(time.as_secs() as i64, 0)
                 .unwrap_or_default();
+            let newest_relative = if let Ok(rel_path) = newest.path.strip_prefix(base_dir) {
+                rel_path.to_string_lossy().to_string()
+            } else {
+                newest.path.to_string_lossy().to_string()
+            };
             html.push_str(&format!("            <p><strong>Most recently modified:</strong> {} ({})</p>\n", 
-                html_escape::encode_text(&newest.path.to_string_lossy()),
+                html_escape::encode_text(&newest_relative),
                 datetime.format("%Y-%m-%d %H:%M:%S")
             ));
         }
@@ -494,6 +506,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Scan { dir, output } => {
             println!("Scanning directory: {}", dir);
+            let base_path = Path::new(&dir);
             let files = scan_html_files(&dir)?;
             
             // Update database with file hashes
@@ -502,7 +515,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 db.upsert_file(&file_path, &file.hash)?;
             }
             
-            let html = generate_sitemap_html(&files, &db);
+            let html = generate_sitemap_html(&files, &db, base_path);
             fs::write(&output, html)?;
             println!("Generated sitemap: {} ({} files)", output, files.len());
         }
