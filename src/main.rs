@@ -268,6 +268,8 @@ fn extract_title_from_html(content: &str) -> String {
                 
                 if title.len() > 100 {
                     format!("{}...", &title[..97])
+                } else if title.len() == 0 {
+                    "No Title".to_string()
                 } else {
                     title
                 }
